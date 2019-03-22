@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <signal.h>
 #include <memory>
-std::shared_ptr<Service> epollServer = std::make_shared<EpollService>(12345);
+std::shared_ptr<Service> epollServer = std::make_shared<EpollService>(12345,10,true);
 
 void my_sig_pro(int sig){
     printf("receive signal [%d]\n",sig);

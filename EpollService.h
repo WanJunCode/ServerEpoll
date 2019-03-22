@@ -23,8 +23,10 @@ private:
 
     int receiveEpollfd;
 
+    int oneshut_;
+
 public:
-    explicit EpollService(int port,int backlog = 10);
+    explicit EpollService(int port,int backlog = 10,bool oneshut = false);
     ~EpollService();
     void startService() override;
     void stopService() override;
@@ -32,6 +34,8 @@ public:
 private:
     bool createListen();
     bool reListen();
+    bool addClient();
+    void readClient(int clientfd);
 
 private:
     bool startReceiveThread();

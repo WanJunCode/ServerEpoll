@@ -7,11 +7,12 @@
 #include <errno.h>
 #include <pthread.h>
 
-EpollService::EpollService(int port, int backlog)
+EpollService::EpollService(int port, int backlog,bool oneshut)
     : port_(port),
       backlog_(backlog),
       service_(false),
-      receiveLoopStart(false)
+      receiveLoopStart(false),
+      oneshut_(oneshut)
 {
     stdin_ = STDIN_FILENO;
     listenEpollfd = epoll_create(1024);
@@ -224,6 +225,81 @@ EpollService::startReceiveThread(){
     return true;
 }
 
+bool
+EpollService::addClient(){
+    pipemsg_t msg;
+    int length = read(pipe_[0],&msg,sizeof(msg));
+    if(length == sizeof(msg)){
+        printf("receive thread read [%d] from pipe connection [%s]:[%d]\n",msg.fd,inet_ntoa(msg.addr.sin_addr),ntohs(msg.addr.sin_port));
+        // add to receiveEpollfd
+        epoll_event clientEv;
+        clientEv.data.fd = msg.fd;
+        clientEv.events = EPOLLIN | EPOLLET;
+        if(oneshut_){
+            clientEv.events |= EPOLLONESHOT;
+        }
+        int ret = epoll_ctl(receiveEpollfd,EPOLL_CTL_ADD,msg.fd,&clientEv);
+        if(ret != 0){
+            printf("add client [%d] on receive epollfd fail\n",msg.fd);
+            // ignore the late insert into map
+            return false;
+        }
+        setnonblocking(msg.fd);
+        // msg => clientInfo_t => std::map
+        static clientInfo_t client_info;
+        client_info.addr = msg.addr;
+        fd_info[msg.fd] = client_info;
+        return true;
+    }else{
+        printf("read from pipe and length = [%d]\n",length);
+        return false;
+    }
+}
+
+void
+EpollService::readClient(int clientfd){
+    const int bufferSize = 10;
+    char buffer[bufferSize];
+    bzero(buffer,bufferSize);
+    pipemsg_t msg;
+
+    // 使用ET模式，需要读干净
+    do{
+        int length = read(clientfd,buffer,bufferSize);
+        if(length>0){
+            printf("receive from client [%d] ,length is [%d] message is :[%s]\n",clientfd,length,buffer);
+            bzero(buffer,bufferSize);
+        }else if(length == 0){
+            printf("receive from client but length is [%d], client [%d] close connection\n",length,clientfd);
+            close(clientfd);
+            // remove from receiveEpollfd
+            epoll_event clientEv;
+            clientEv.data.fd = clientfd;
+            clientEv.events = EPOLLIN | EPOLLET;
+            epoll_ctl(receiveEpollfd,EPOLL_CTL_DEL,clientfd,&clientEv);
+            fd_info.erase(clientfd);
+        }else{
+            if (errno == EAGAIN) //没有数据需要读取了
+            {
+                printf("errno is EAGAIN\n");
+                if(oneshut_){
+                    // 如果使用了 epoll one shut 模式，需要重新设置
+                    epoll_event clientEv;
+                    clientEv.data.fd = clientfd;
+                    clientEv.events = EPOLLIN | EPOLLET | EPOLLONESHOT;
+                    epoll_ctl(receiveEpollfd,EPOLL_CTL_MOD,clientfd,&clientEv);
+                    printf("reset one shut\n");
+                }
+                break;
+            }
+            else if (errno == EINTR) //可能被中断信号打断,,经过验证对非阻塞socket并未收到此错误,应该可以省掉该步判断
+            {
+                printf("read break by signal\n");
+            }
+        }
+    }while(service_);
+}
+
 // in static method we can use private argument in this class
 void *
 EpollService::ReceiveLoop(void *args){
@@ -233,63 +309,18 @@ EpollService::ReceiveLoop(void *args){
     pipemsg_t msg;
     const int maxEvents = 1024;
     epoll_event events[maxEvents];
-    const int bufferSize = 1024;
-    char buffer[bufferSize];
-    bzero(buffer,bufferSize);
-    while(server->service_){
-        
-        nfds = epoll_wait(server->receiveEpollfd,events,maxEvents,-1);
-        if(nfds>0){
-            for(int i=0;i<nfds && server->service_;++i){
-                if(events[i].data.fd == server->pipe_[0]){
-                    // read new client from pipe and add to receiveEpollfd
-                    int length = read(server->pipe_[0],&msg,sizeof(msg));
-                    if(length == sizeof(msg)){
-                        printf("receive thread read [%d] from pipe connection [%s]:[%d]\n",msg.fd,inet_ntoa(msg.addr.sin_addr),ntohs(msg.addr.sin_port));
-                        // add to receiveEpollfd
-                        epoll_event clientEv;
-                        clientEv.data.fd = msg.fd;
-                        clientEv.events = EPOLLIN;
-                        ret = epoll_ctl(server->receiveEpollfd,EPOLL_CTL_ADD,msg.fd,&clientEv);
-                        if(ret != 0){
-                            printf("add client [%d] on receive epollfd fail\n",msg.fd);
-                            // ignore the later insert into map
-                            continue;
-                        }
-                        // msg => clientInfo_t => std::map
-                        static clientInfo_t client_info;
-                        client_info.addr = msg.addr;
-                        server->fd_info[msg.fd] = client_info;
-                    }else{
-                        printf("read from pipe and length = [%d]\n",length);
-                    }
-                }else{
-                    // read from client
-                    bzero(buffer,bufferSize);
-                    int length = read(events[i].data.fd,buffer,bufferSize);
-                    if(length>0){
-                        printf("receive from client [%d] , message is :[%s]\n",events[i].data.fd,buffer);
-                    }else if(length == 0){
-                        printf("receive from client but length is [%d], client [%d] close connection\n",length,events[i].data.fd);
-                        close(events[i].data.fd);
-                        // remove from receiveEpollfd
-                        epoll_event clientEv;
-                        clientEv.data.fd = msg.fd;
-                        clientEv.events = EPOLLIN;
-                        epoll_ctl(server->receiveEpollfd,EPOLL_CTL_DEL,events[i].data.fd,&clientEv);
-                        server->fd_info.erase(events[i].data.fd);
-                    }else{
-                        printf("receive from client but length is [%d]\n",length);
-                    }
-                }
 
-            }// end for loop
-        }// end nfds > 0
-        else{
-            printf("nfds = [%d]\n",nfds);
-        }
+    while(server->service_){
+        nfds = epoll_wait(server->receiveEpollfd,events,maxEvents,-1);
+        for(int i=0;i<nfds && server->service_;++i){
+            if(events[i].data.fd == server->pipe_[0]){
+                // read new client from pipe and add to receiveEpollfd
+                server->addClient();
+            }else{
+                server->readClient(events[i].data.fd);
+            }
+        }// end for loop
 
     }
-
     return NULL;
 }
