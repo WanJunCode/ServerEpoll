@@ -8,22 +8,25 @@
 class EpollService :public Service
 {
 private:
-    int listenEpollfd;
-    int listenfd;
+    int listenEpollfd;          // epoll fd
+    int listenfd;               // listener
     int port_;
     int backlog_;
     struct epoll_event server_ev;
     struct sockaddr_in svraddr;
-    bool service_;
+    bool service_;              // state for server
 
-    int pipe_[2];
-    pthread_t receiveTrd;
-    bool receiveLoopStart;
+    int pipe_[2];               // pipe for transport pipemsg_t
+
+    pthread_t receiveTrd;       // thread id for accept thread
+    bool receiveLoopStart;      // state for starting receive loop thread
+
+    // container for accept clients
     std::map<int , clientInfo_t> fd_info;
 
-    int receiveEpollfd;
+    int receiveEpollfd;         // epoll fd for receive loop thread
 
-    int oneshut_;
+    int oneshut_;               // if use one shut method on client fd
 
 public:
     explicit EpollService(int port,int backlog = 10,bool oneshut = false);

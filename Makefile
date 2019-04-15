@@ -13,4 +13,4 @@ origin: origin.o
 	$(CXX) $^ $(LDFLAGS) -o $@ 
 
 clean:
-	rm -rf ${EXECUTABLE} origin *.o core .vscode/ipch
+	rm -rf ${EXECUTABLE} origin *.o core
