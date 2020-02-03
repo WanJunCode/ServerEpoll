@@ -6,7 +6,7 @@ EXECUTABLE = wj-server
 
 all: ${EXECUTABLE} origin
 
-${EXECUTABLE} : main.o EpollService.o Tool.o
+${EXECUTABLE} : main.o EpollService.o Tool.o ClockTimer.o
 	$(CXX) $^ $(LDFLAGS) -o $@ -g 
 
 origin: origin.o

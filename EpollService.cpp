@@ -69,7 +69,6 @@ EpollService::~EpollService()
     if (listenEpollfd > 0){
         close(listenEpollfd);
     }
-
 }
 
 bool EpollService::createListen()

@@ -1,52 +1,15 @@
 #ifndef EPOLL_SERVER
+#define EPOLL_SERVER
 
 #include "Service.h"
+#include "ClockTimer.h"
 #include <sys/epoll.h>
 #include <netinet/in.h>
-#include <sys/timerfd.h>
-#include <unistd.h>
 #include <map>
 
-class ClockTimer{
-    typedef void(*TimerCallback)(void *arg);
-public:
-    ClockTimer(int second,TimerCallback callback=NULL){
-        second_ = second;
-        fd_ = timerfd_create(CLOCK_REALTIME,0);
-        cb_ = callback;
-
-        timespec &now = getNow();
-        new_value.it_value.tv_sec = now.tv_sec + second;
-        new_value.it_value.tv_nsec = now.tv_nsec;
-        new_value.it_interval.tv_sec = second;     //之后的定时间隔
-        timerfd_settime(fd_, TFD_TIMER_ABSTIME, &new_value, NULL);
-    }
-
-    ~ClockTimer(){
-        close(fd_);
-    }
-
-    int getFd() const{
-        return fd_;
-    }
-
-    TimerCallback getCallback() const{
-        return cb_;
-    }
-private:
-
-    static struct timespec &getNow(){
-        static struct timespec now;
-        clock_gettime(CLOCK_REALTIME,&now);
-        return now;
-    }
-
-private:
-    int fd_;
-    int second_;
-    struct itimerspec new_value;
-    TimerCallback cb_;
-};
+// listener  监听者
+// 客户端处理器
+// 定时器处理器
 
 class EpollService :public Service
 {
@@ -69,7 +32,7 @@ private:
     
     // container for accept clients
     std::map<int , clientInfo_t> fd_info;
-    std::map<int , ClockTimer *>   timerMap; 
+    std::map<int , ClockTimer *> timerMap; 
 
     int receiveEpollfd;         // epoll fd for receive loop thread
     int timerEpollfd;
