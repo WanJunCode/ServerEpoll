@@ -12,19 +12,26 @@ EpollService::EpollService(int port, int backlog,bool oneshut)
       backlog_(backlog),
       service_(false),
       receiveLoopStart(false),
+      timerLoopStart(false),
       oneshut_(oneshut)
 {
     stdin_ = STDIN_FILENO;
     listenEpollfd = epoll_create(1024);
     receiveEpollfd = epoll_create(1024);
+    timerEpollfd = epoll_create(1024);
 
+    // 为监听fd设置处理函数，接受来自键盘的输入事件
     epoll_event stdin_ev;
     stdin_ev.data.fd = stdin_;
     stdin_ev.events = EPOLLIN;
     epoll_ctl(listenEpollfd,EPOLL_CTL_ADD,stdin_,&stdin_ev);
+    
     // create pipe for transpotr client message
     pipe(pipe_);
-    createListen();
+
+    if(false==createListen()){
+        exit(EXIT_FAILURE);
+    }
 }
 
 EpollService::~EpollService()
@@ -39,6 +46,19 @@ EpollService::~EpollService()
     for(auto iter = fd_info.begin();iter != fd_info.end();iter++){
         close(iter->first);
         printf("close [%d]\n",iter->first);
+    }
+
+    if(timerLoopStart == true){
+        printf("join timer thread\n");
+        if(0 != pthread_join(timerTrd,NULL)){
+            printf("join timer thread fail\n");
+        }
+    }
+
+    // delete ClockTimer
+    for(auto iter = timerMap.begin();iter != timerMap.end();iter++){
+        delete iter->second;
+        printf("delete timer\n");
     }
 
     //关闭监听描述字
@@ -74,6 +94,7 @@ bool EpollService::createListen()
         close(listenEpollfd);
         return false;
     }
+
     bzero(&svraddr, sizeof(svraddr));
     svraddr.sin_family = AF_INET;
     svraddr.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -86,6 +107,7 @@ bool EpollService::createListen()
         close(listenEpollfd);
         return false;
     }
+    return true;
 }
 
 void EpollService::startService()
@@ -96,9 +118,18 @@ void EpollService::startService()
     if(startReceiveThread() == false){
         receiveLoopStart = false;
         printf("start receive thread fail\n");
-        return;
+        exit(EXIT_FAILURE);
     }else{
         receiveLoopStart = true;
+    }
+
+    // start timer thread loop
+    if(startTimerThread() == false){
+        timerLoopStart = false;
+        printf("start timer thread fail\n");
+        exit(EXIT_FAILURE);
+    }else{
+        timerLoopStart = true;
     }
 
     printf("start epoll server service\n");
@@ -122,8 +153,7 @@ void EpollService::startService()
                         struct sockaddr_in cliaddr;
                         clilen = sizeof(struct sockaddr);
                         int connfd = accept(listenfd, (sockaddr *)&cliaddr, &clilen);
-                        if (connfd > 0)
-                        {
+                        if (connfd > 0){
                             printf("AcceptThread, accept: [%d],connect: [%s]:[%d]\n", connfd, inet_ntoa(cliaddr.sin_addr), ntohs(cliaddr.sin_port));
                             // 传递
                             static pipemsg_t msg;
@@ -161,6 +191,7 @@ void EpollService::startService()
                 }
             }// end if
 
+            // 处理标准输入事件
             if(events[i].data.fd == stdin_){
                 char buffer[80];
                 bzero(buffer,sizeof(buffer));
@@ -175,6 +206,16 @@ void EpollService::startService()
                         printf("infomation: [%d] [%s]:[%d]\n",iter->first,inet_ntoa(iter->second.addr.sin_addr),ntohs(iter->second.addr.sin_port));
                     }
                     printf("list end\n");
+                }else if(strncmp(buffer,"time",4)==0){
+                    printf("set timer\n");
+                    // 添加定时器到　timerEpollfd
+                    ClockTimer *timer = new ClockTimer(2);
+                    timerMap[timer->getFd()] = timer;
+
+                    epoll_event timerEv;
+                    timerEv.data.fd = timer->getFd();
+                    timerEv.events = EPOLLIN;
+                    int ret = epoll_ctl(timerEpollfd,EPOLL_CTL_ADD,timer->getFd(),&timerEv);
                 }
             }
         }// end for
@@ -187,6 +228,12 @@ EpollService::stopService(){
         printf("stop service pthread cancel\n");
         pthread_cancel(receiveTrd);
     }
+
+    if(timerLoopStart){
+        printf("stop timer loop cancel\n");
+        pthread_cancel(timerTrd);
+    }
+
     service_ = false;
 }
 
@@ -220,6 +267,22 @@ EpollService::startReceiveThread(){
     // use static method for start_routine
     if(0 !=pthread_create(&receiveTrd,&attr,ReceiveLoop,this)){
         printf("create receive thread fail\n");
+        return false;
+    }
+    return true;
+}
+
+bool 
+EpollService::startTimerThread(){
+    //创建线程时采用的参数
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);                 //设置绑定的线程,以获取较高的响应速度
+    printf("start timer thread\n");
+
+    // use static method for start_routine
+    if(0 !=pthread_create(&timerTrd,&attr,TimerLoop,this)){
+        printf("create timer thread fail\n");
         return false;
     }
     return true;
@@ -300,7 +363,7 @@ EpollService::readClient(int clientfd){
     }while(service_);
 }
 
-// in static method we can use private argument in this class
+// this static method that we can use private argument in this class
 void *
 EpollService::ReceiveLoop(void *args){
     EpollService *server = (EpollService *)args;
@@ -321,6 +384,25 @@ EpollService::ReceiveLoop(void *args){
             }
         }// end for loop
 
+    }
+    return NULL;
+}
+
+void *
+EpollService::TimerLoop(void *args){
+    EpollService *server = (EpollService *)args;
+    int nfds = 0;
+    const int maxEvents = 1024;
+    epoll_event events[maxEvents];
+    uint64_t res;
+
+    while(server->service_){
+        nfds = epoll_wait(server->timerEpollfd,events,maxEvents,-1);
+        for(int i=0;i<nfds && server->service_;++i){
+            printf("timer callback\n");
+            auto cb = server->timerMap[events[i].data.fd]->getCallback();
+            read(events[i].data.fd,&res,sizeof(res));
+        }// end for loop
     }
     return NULL;
 }

@@ -24,11 +24,12 @@ void setSignalProcess(){
 }
 
 int main(int argc,char *argv[]){
-
+    printf("epoll server start\n");
     // 使用信号 关闭 epoll server
     setSignalProcess();
 
     g_epollServer->startService();
-    
+
+    printf("epoll server end\n");
     return 0;
 }

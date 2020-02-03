@@ -7,7 +7,7 @@ EXECUTABLE = wj-server
 all: ${EXECUTABLE} origin
 
 ${EXECUTABLE} : main.o EpollService.o Tool.o
-	$(CXX) $^ $(LDFLAGS) -o $@ 
+	$(CXX) $^ $(LDFLAGS) -o $@ -g 
 
 origin: origin.o
 	$(CXX) $^ $(LDFLAGS) -o $@ 
