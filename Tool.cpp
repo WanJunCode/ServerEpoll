@@ -9,20 +9,20 @@
 #include <signal.h>
 
 void setnonblocking(int sock) 
-{     
-    int opts;     
-    opts = fcntl(sock,F_GETFL);     
-    if (opts < 0)     
-    {         
-        perror("fcntl(sock,GETFL)");         
-        exit(1);     
-    }     
-    opts = opts|O_NONBLOCK;     
-    if (fcntl(sock, F_SETFL, opts) < 0)     
-    {         
+{
+    int opts;
+    opts = fcntl(sock,F_GETFL);
+    if (opts < 0)
+    {
+        perror("fcntl(sock,GETFL)");
+        exit(1);
+    }
+    opts = opts|O_NONBLOCK;
+    if (fcntl(sock, F_SETFL, opts) < 0)
+    {
         perror("fcntl(sock,SETFL,opts)");         
-        exit(1);     
-    }  
+        exit(1);
+    }
 }
 
 void setreuseaddr(int sock)

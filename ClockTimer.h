@@ -2,7 +2,7 @@
 #define CLOCKTIMER_H
 
 #include <sys/timerfd.h>
-#include <unistd.h>     // close
+#include <unistd.h>     // close()
 
 typedef void(*TimerCallback)(void *arg);
 
