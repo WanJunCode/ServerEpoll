@@ -3,8 +3,10 @@
 #include <signal.h>
 #include <memory>
 
+#define SERVER_PORT 12345
+
 // 使用唯一指针 多态 使用
-std::unique_ptr<Service> g_epollServer(new EpollService(12345,10,true));
+std::unique_ptr<Service> g_epollServer(new EpollService(SERVER_PORT,10,true));
 
 void my_sig_pro(int sig){
     printf("receive signal [%d]\n",sig);

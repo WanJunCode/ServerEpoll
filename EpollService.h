@@ -34,7 +34,7 @@ private:
     std::map<int , clientInfo_t> fd_info;
     std::map<int , ClockTimer *> timerMap; 
 
-    int receiveEpollfd;         // epoll fd for receive loop thread
+    int receiveEpollfd;         // epoll fd for receive loop thread 接收从管道传输的客户端套接字，接收来自各客户端套接字的数据
     int timerEpollfd;
 
     int oneshut_;               // if use one shut method on client fd

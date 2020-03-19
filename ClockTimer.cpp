@@ -1,5 +1,12 @@
 #include "ClockTimer.h"
 
+// static 提供文件作用域
+static struct timespec &getNow(){
+    static struct timespec now;
+    clock_gettime(CLOCK_REALTIME,&now);
+    return now;// it's ok return 【local static variable】's reference 
+}
+
 ClockTimer::ClockTimer(int second,TimerCallback callback){
     second_ = second;
     fd_ = timerfd_create(CLOCK_REALTIME,0);
@@ -22,11 +29,4 @@ int ClockTimer::getFd() const{
 
 TimerCallback ClockTimer::getCallback(){
     return cb_;
-}
-
-// STATIC
-struct timespec &ClockTimer::getNow(){
-    static struct timespec now;
-    clock_gettime(CLOCK_REALTIME,&now);
-    return now;
 }

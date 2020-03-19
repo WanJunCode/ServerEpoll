@@ -13,7 +13,6 @@ public:
 
     int getFd() const;
     TimerCallback getCallback();
-    static struct timespec &getNow();
 
 private:
     int fd_;
