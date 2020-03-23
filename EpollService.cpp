@@ -38,6 +38,13 @@ EpollService::EpollService(int port, int backlog, bool oneshut)
 
 EpollService::~EpollService()
 {
+
+    for(auto iter = fd_info.begin();iter != fd_info.end();iter++){
+        close(iter->first);
+        printf("close [%d]\n",iter->first);
+    }
+
+
     if(receiveLoopStart == true){
         printf("join receive thread\n");
         if(0 !=pthread_join(receiveTrd,NULL)){
@@ -52,10 +59,6 @@ EpollService::~EpollService()
         }
     }
 
-    for(auto iter = fd_info.begin();iter != fd_info.end();iter++){
-        close(iter->first);
-        printf("close [%d]\n",iter->first);
-    }
 
     // delete ClockTimer
     for(auto iter = timerMap.begin();iter != timerMap.end();iter++){
@@ -204,7 +207,6 @@ void EpollService::startService()
                 int length = read(stdin_,buffer,sizeof(buffer));
                 buffer[length-1] = '\0';
                 if(strncmp(buffer,"over",4) == 0){
-                    service_ = false;
                     printf("from stdin read over\n");
                     stopService();
                 }else if(strncmp(buffer,"list",4)==0){
@@ -230,6 +232,9 @@ void EpollService::startService()
 }
 
 void EpollService::stopService(){
+    // can't move to anywhere because singal 
+    service_ = false;
+
     if(receiveLoopStart){
         printf("stop service pthread cancel\n");
         pthread_cancel(receiveTrd);
