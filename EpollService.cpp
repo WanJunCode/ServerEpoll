@@ -6,6 +6,7 @@
 #include <arpa/inet.h> // inet_ntoa
 #include <errno.h>
 #include <pthread.h>
+#include <assert.h>
 
 EpollService::EpollService(int port, int backlog, bool oneshut)
     : port_(port),
